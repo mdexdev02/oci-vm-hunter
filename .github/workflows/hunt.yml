@@ -41,7 +41,9 @@ jobs:
           OCI_IMAGE: ${{ secrets.OCI_IMAGE }}
           OCI_SUBNET: ${{ secrets.OCI_SUBNET }}
           SSH_PUB: ${{ secrets.SSH_PUB }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
+          notify() { curl -s -o /dev/null -H 'Content-Type: application/json' -d "{\"content\":\"[OCI VM] $1\"}" "$DISCORD_WEBHOOK_URL"; }
           printf '%s\n' "$SSH_PUB" > key.pub
           set +e
           OUT=$(oci compute instance launch --no-retry \
@@ -59,7 +61,9 @@ jobs:
           echo "$OUT" | tail -5
           if [ $RC -eq 0 ]; then
             echo "::error::VM 생성 성공 - OCI 콘솔 확인"
-            exit 1   # 실패 메일을 알림으로 쓴다
+            notify "VM 생성 성공! forum-vm (A1 2코어·12GB). OCI 콘솔에서 공개 IP를 확인하세요."
+            exit 1   # 실패 메일도 같이 간다
           fi
-          if echo "$OUT" | grep -qi "capacity"; then echo "재고 없음 - 다음 주기에 재시도"; exit 0; fi
+          if echo "$OUT" | grep -qiE "capacity|TooManyRequests"; then echo "재고 없음/요청 제한 - 다음 주기에 재시도"; exit 0; fi
+          notify "예상 밖 오류로 VM 생성 실패 — GitHub Actions 로그를 확인하세요."
           exit 1
