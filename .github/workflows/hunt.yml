@@ -1,7 +1,7 @@
 name: hunt-oci-vm
 on:
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 concurrency: hunt
 jobs:
@@ -44,7 +44,7 @@ jobs:
         run: |
           printf '%s\n' "$SSH_PUB" > key.pub
           set +e
-          OUT=$(oci compute instance launch \
+          OUT=$(oci compute instance launch --no-retry \
             --availability-domain "lBcr:AP-OSAKA-1-AD-1" \
             --compartment-id "$OCI_TENANCY" \
             --display-name forum-vm \
