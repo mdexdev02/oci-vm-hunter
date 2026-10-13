@@ -64,6 +64,13 @@ jobs:
             notify "VM 생성 성공! forum-vm (A1 2코어·12GB). OCI 콘솔에서 공개 IP를 확인하세요."
             exit 1   # 실패 메일도 같이 간다
           fi
-          if echo "$OUT" | grep -qiE "capacity|TooManyRequests"; then echo "재고 없음/요청 제한 - 다음 주기에 재시도"; exit 0; fi
-          notify "예상 밖 오류로 VM 생성 실패 — GitHub Actions 로그를 확인하세요."
+          # 정기 보고는 하루 2회(00시·12시 UTC = 09시·21시 KST)의 첫 실행에서만
+          REPORT=0
+          if [ "$(date -u +%H)" = "00" -o "$(date -u +%H)" = "12" ] && [ "$(date -u +%M)" -lt 15 ]; then REPORT=1; fi
+          if echo "$OUT" | grep -qiE "capacity|TooManyRequests"; then
+            echo "재고 없음/요청 제한 - 다음 주기에 재시도"
+            [ $REPORT -eq 1 ] && notify "감시 정상 동작 중 — 아직 재고 없음 (15분마다 시도)"
+            exit 0
+          fi
+          [ $REPORT -eq 1 ] && notify "예상 밖 오류로 VM 생성 실패 — GitHub Actions 로그를 확인하세요."
           exit 1
