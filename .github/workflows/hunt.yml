@@ -29,7 +29,10 @@ jobs:
         env:
           OCI_TENANCY: ${{ secrets.OCI_TENANCY }}
         run: |
-          N=$(oci compute instance list -c "$OCI_TENANCY" --query 'length(data[?"lifecycle-state"!=`TERMINATED`])' | tr -d '[:space:]')
+          # 인스턴스가 0개면 CLI가 빈 출력을 낸다 → 0으로 취급. 인증 오류 등은 rc로 실패 처리
+          N=$(oci compute instance list -c "$OCI_TENANCY" --query 'length(data[?"lifecycle-state"!=`TERMINATED`])') || exit 1
+          N=$(printf '%s' "${N:-0}" | tr -d '[:space:]')
+          echo "기존 인스턴스 수: $N"
           echo "n=$N" >> "$GITHUB_OUTPUT"
       - name: VM 생성 시도
         if: steps.exists.outputs.n == '0'
