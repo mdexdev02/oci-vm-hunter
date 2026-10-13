@@ -1,0 +1,62 @@
+name: hunt-oci-vm
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+concurrency: hunt
+jobs:
+  hunt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPPRESS_LABEL_WARNING: 'True'
+    steps:
+      - name: OCI CLI 설정
+        env:
+          OCI_KEY: ${{ secrets.OCI_KEY }}
+          OCI_USER: ${{ secrets.OCI_USER }}
+          OCI_TENANCY: ${{ secrets.OCI_TENANCY }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+        run: |
+          pip install -q oci-cli
+          mkdir -p ~/.oci
+          printf '%s\n' "$OCI_KEY" > ~/.oci/key.pem
+          chmod 600 ~/.oci/key.pem
+          printf '[DEFAULT]\nuser=%s\ntenancy=%s\nfingerprint=%s\nregion=ap-osaka-1\nkey_file=%s/.oci/key.pem\n' \
+            "$OCI_USER" "$OCI_TENANCY" "$OCI_FINGERPRINT" "$HOME" > ~/.oci/config
+      - name: 이미 만들었는지 확인
+        id: exists
+        env:
+          OCI_TENANCY: ${{ secrets.OCI_TENANCY }}
+        run: |
+          N=$(oci compute instance list -c "$OCI_TENANCY" --query 'length(data[?"lifecycle-state"!=`TERMINATED`])' | tr -d '[:space:]')
+          echo "n=$N" >> "$GITHUB_OUTPUT"
+      - name: VM 생성 시도
+        if: steps.exists.outputs.n == '0'
+        env:
+          OCI_TENANCY: ${{ secrets.OCI_TENANCY }}
+          OCI_IMAGE: ${{ secrets.OCI_IMAGE }}
+          OCI_SUBNET: ${{ secrets.OCI_SUBNET }}
+          SSH_PUB: ${{ secrets.SSH_PUB }}
+        run: |
+          printf '%s\n' "$SSH_PUB" > key.pub
+          set +e
+          OUT=$(oci compute instance launch \
+            --availability-domain "lBcr:AP-OSAKA-1-AD-1" \
+            --compartment-id "$OCI_TENANCY" \
+            --display-name forum-vm \
+            --shape VM.Standard.A1.Flex \
+            --shape-config '{"ocpus":2,"memoryInGBs":12}' \
+            --image-id "$OCI_IMAGE" \
+            --subnet-id "$OCI_SUBNET" \
+            --assign-public-ip true \
+            --boot-volume-size-in-gbs 100 \
+            --ssh-authorized-keys-file key.pub 2>&1)
+          RC=$?
+          echo "$OUT" | tail -5
+          if [ $RC -eq 0 ]; then
+            echo "::error::VM 생성 성공 - OCI 콘솔 확인"
+            exit 1   # 실패 메일을 알림으로 쓴다
+          fi
+          if echo "$OUT" | grep -qi "capacity"; then echo "재고 없음 - 다음 주기에 재시도"; exit 0; fi
+          exit 1
